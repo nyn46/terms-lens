@@ -59,6 +59,7 @@ const RULES = [
   },
   {
     pattern: /sell (?:your |the )?personal (?:data|information)|sale of personal (?:data|information)/i,
+    skipPattern: /\b(?:do not|don't|will not|won't|never|not)\s+sell\b/i,
     classification: "concern",
     severity: "high",
     category: "Privacy",
@@ -162,7 +163,7 @@ export function analyzeWithRules(document) {
     for (const rule of RULES) {
       const match = block.text.match(rule.pattern);
       const key = `${rule.title}:${block.id}`;
-      if (!match || seen.has(key)) continue;
+      if (!match || rule.skipPattern?.test(block.text) || seen.has(key)) continue;
       seen.add(key);
       findings.push({
         blockId: block.id,

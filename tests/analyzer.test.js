@@ -27,6 +27,20 @@ test("rule scan detects concerning and positive clauses", () => {
   assert.ok(result.findings.some((item) => item.classification === "positive"));
 });
 
+test("rule scan does not flag negated sale-of-data statements", () => {
+  const result = analyzeWithRules({
+    ...document,
+    blocks: [
+      {
+        id: "block-privacy",
+        heading: "Privacy",
+        text: "We will not sell your personal information to third parties for advertising purposes."
+      }
+    ]
+  });
+  assert.equal(result.findings.some((item) => item.title === "Personal data may be sold"), false);
+});
+
 test("evidence verifier drops hallucinated quotes", () => {
   const findings = verifyAndCleanFindings({
     findings: [
