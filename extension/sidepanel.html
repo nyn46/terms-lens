@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Terms Lens</title>
+    <link rel="stylesheet" href="sidepanel.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand-mark" aria-hidden="true">T</div>
+      <div>
+        <h1>Terms Lens</h1>
+        <p>Know what you are agreeing to.</p>
+      </div>
+      <button id="settingsButton" class="icon-button" type="button" aria-label="Settings" aria-expanded="false" aria-controls="settings">•••</button>
+    </header>
+
+    <main id="content">
+      <div id="announcer" class="visually-hidden" aria-live="polite" aria-atomic="true"></div>
+
+      <section id="settings" class="panel hidden" aria-label="Settings">
+        <label for="apiUrl">Analyzer URL</label>
+        <p id="apiUrlHint" class="field-hint">Local server used to review extracted policy text.</p>
+        <div class="input-row">
+          <input id="apiUrl" type="url" value="http://127.0.0.1:8787" autocomplete="off" spellcheck="false" aria-describedby="apiUrlHint" />
+          <button id="saveSettings" class="secondary-button" type="button">Save</button>
+        </div>
+      </section>
+
+      <section id="status" class="status-card">
+        <span class="pulse" aria-hidden="true"></span>
+        <div>
+          <strong>Inspecting this website</strong>
+          <p>Looking for its legal documents.</p>
+        </div>
+      </section>
+
+      <section id="permissionPrompt" class="permission-card hidden">
+        <strong>Scan this site?</strong>
+        <p id="permissionMessage">Terms Lens needs temporary access to this website to find legal documents.</p>
+        <button id="grantSiteAccess" class="secondary-button" type="button">Allow and scan</button>
+      </section>
+
+      <section id="documentPicker" class="hidden">
+        <div class="section-heading">
+          <h2>Documents found</h2>
+          <span id="documentCount" class="count"></span>
+        </div>
+        <div id="documentList" class="document-list"></div>
+        <div class="manual-entry">
+          <label for="manualUrl">Or paste a policy URL</label>
+          <p id="manualUrlHint" class="field-hint">Use a public HTTP or HTTPS legal document.</p>
+          <div class="input-row">
+            <input id="manualUrl" type="url" placeholder="https://example.com/terms" autocomplete="url" spellcheck="false" aria-describedby="manualUrlHint" />
+            <button id="analyzeManual" class="secondary-button" type="button">Analyze</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="loading" class="loading-view hidden">
+        <div class="loader"></div>
+        <h2>Reading the fine print</h2>
+        <p id="loadingMessage">Extracting clauses and preserving the evidence.</p>
+      </section>
+
+      <section id="results" class="hidden">
+        <div class="result-header">
+          <span id="modeBadge" class="mode-badge"></span>
+          <h2 id="resultTitle"></h2>
+          <p id="resultSummary"></p>
+          <div id="summaryCounts" class="summary-counts"></div>
+        </div>
+
+        <div id="filters" class="filters" aria-label="Filter findings">
+          <button class="filter active" type="button" data-filter="all" aria-pressed="true">All</button>
+          <button class="filter" type="button" data-filter="concern" aria-pressed="false">Concerns</button>
+          <button class="filter" type="button" data-filter="caution" aria-pressed="false">Worth knowing</button>
+          <button class="filter" type="button" data-filter="positive" aria-pressed="false">Good</button>
+        </div>
+
+        <div id="findings" class="findings"></div>
+        <div id="limitations" class="limitations"></div>
+        <button id="scanAgain" class="secondary-button full-width" type="button">Scan another document</button>
+      </section>
+
+      <section id="error" class="error-card hidden" role="alert">
+        <strong>We could not finish this scan.</strong>
+        <p id="errorMessage"></p>
+        <button id="retry" class="secondary-button" type="button">Try again</button>
+      </section>
+    </main>
+
+    <footer>Plain-language guidance, not legal advice.</footer>
+    <script src="sidepanel.js"></script>
+  </body>
+</html>
