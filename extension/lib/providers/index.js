@@ -1,8 +1,10 @@
 import { quickScan } from "../quick-scan.js";
 import { createChromeAiProvider } from "./chrome-ai.js";
-import { createByokProvider, createCloudProvider } from "./future.js";
 
-export const PREFERENCES = ["automatic", "chrome-ai", "cloud", "byok"];
+// Preferences: "automatic" offers Private AI Scan after Quick Scan; "chrome-ai" also runs it
+// automatically when Chrome's model is already on the device. There is deliberately no
+// option that requires an account, API key or remote service.
+export const PREFERENCES = ["automatic", "chrome-ai"];
 export const DEFAULT_PREFERENCE = "automatic";
 
 /** Quick Scan is a provider too, but it is always local and can never be unavailable. */
@@ -20,9 +22,7 @@ export const quickScanProvider = {
 export function createProviders(overrides = {}) {
   return {
     quick: quickScanProvider,
-    "chrome-ai": overrides["chrome-ai"] ?? createChromeAiProvider(),
-    cloud: overrides.cloud ?? createCloudProvider(),
-    byok: overrides.byok ?? createByokProvider()
+    "chrome-ai": overrides["chrome-ai"] ?? createChromeAiProvider()
   };
 }
 
@@ -36,7 +36,7 @@ export async function runQuickScan(document, providers = createProviders()) {
 }
 
 /**
- * Runs a deeper provider. On any failure, the caller keeps the Quick Scan result:
+ * Runs a deeper provider. On any failure the caller keeps the Quick Scan result:
  * { ok: true, result } or { ok: false, reason, code }.
  */
 export async function runDeeperScan(providerId, document, providers, options) {
@@ -44,7 +44,7 @@ export async function runDeeperScan(providerId, document, providers, options) {
   if (!provider || providerId === "quick") return { ok: false, code: "unavailable", reason: "No deeper scan is available." };
   try {
     const status = await provider.availability();
-    if (status.state === "unavailable" || status.state === "coming-soon") {
+    if (status.state === "unavailable") {
       return { ok: false, code: "unavailable", reason: status.reason || "This scan is not available." };
     }
     const result = await provider.analyze(document, options);

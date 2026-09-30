@@ -62,7 +62,7 @@ export function quickScan(document) {
     mode: "quick",
     limit: 20,
     limitations: [
-      "Quick Scan checks for known phrase patterns. It is not an AI or legal review and may miss clauses that depend on context."
+      "Quick Scan checks this page for known contract patterns. It may miss clauses that depend on context. Plain-language guidance, not legal advice."
     ]
   });
 }

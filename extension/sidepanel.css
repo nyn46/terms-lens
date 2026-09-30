@@ -153,3 +153,10 @@ input:user-invalid, input[aria-invalid="true"] { border-color: var(--red); box-s
 .manual-entry summary { color: var(--muted); font-size: 11px; font-weight: 700; cursor: pointer; margin-bottom: 10px; }
 
 @media (prefers-color-scheme: dark) { .primary-button { color: #0b1f16; } }
+
+.ai-section { margin-top: 6px; }
+.ai-section p, .handoff p { margin: 5px 0 10px; color: var(--muted); font-size: 11px; line-height: 1.5; }
+.handoff { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
+.handoff-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.handoff p.handoff-status { margin: 10px 0 0; padding: 9px 11px; border-radius: 8px; background: var(--subtle); color: var(--ink); }
+.source-button:disabled { color: var(--muted); cursor: not-allowed; }

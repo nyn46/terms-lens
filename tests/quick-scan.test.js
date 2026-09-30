@@ -69,7 +69,7 @@ test("deduplicates repeated clauses across blocks and within a block", () => {
 test("a page with no known patterns returns an empty, non-error result", () => {
   const result = quickScan(doc([{ id: "x", heading: "", text: "Welcome to our friendly recipe blog about sourdough bread." }]));
   assert.deepEqual(result.findings, []);
-  assert.match(result.limitations[0], /not an AI or legal review/);
+  assert.match(result.limitations[0], /known contract patterns/);
 });
 
 test("excerptAround caps very long text without losing the match", () => {

@@ -8,6 +8,7 @@
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
     "test": "node --test",
+    "test:e2e": "node tests/e2e/run.mjs",
     "check": "node scripts/check.mjs"
   },
   "engines": {

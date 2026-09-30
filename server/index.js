@@ -1,3 +1,4 @@
+// DEVELOPMENT ONLY. Optional experiment server; the packaged extension never calls it.
 import http from "node:http";
 import { analyzeDocument, sanitizeRequest } from "./analyzer.js";
 

@@ -60,6 +60,7 @@
 
   function discoverPage() {
     return {
+      contentType: document.contentType,
       links: discoverLinks(),
       currentDocument: {
         title: document.title,

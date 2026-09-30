@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { createChromeAiProvider, parseModelOutput, chunkBlocks } from "../extension/lib/providers/chrome-ai.js";
-import { createProviders, runDeeperScan, runQuickScan, normalizePreference } from "../extension/lib/providers/index.js";
+import { createProviders, runDeeperScan, runQuickScan, normalizePreference, PREFERENCES } from "../extension/lib/providers/index.js";
 
 const document = {
   title: "Terms",
@@ -83,15 +83,6 @@ test("fallback: a model that throws mid-scan yields a failure, not an exception"
   assert.equal(outcome.code, "failed");
 });
 
-test("future providers are placeholders that refuse to run and never transmit", async () => {
-  const providers = createProviders();
-  for (const id of ["cloud", "byok"]) {
-    assert.equal((await providers[id].availability()).state, "coming-soon");
-    const outcome = await runDeeperScan(id, document, providers);
-    assert.equal(outcome.ok, false);
-  }
-});
-
 test("download progress is only reported through the create() monitor", async () => {
   const seen = [];
   const provider = createChromeAiProvider({ languageModel: fakeModel({ state: "downloadable", reply: goodReply }) });
@@ -108,6 +99,8 @@ test("chunkBlocks splits by size and preserves order", () => {
 test("preferences normalise to a known value", () => {
   assert.equal(normalizePreference("chrome-ai"), "chrome-ai");
   assert.equal(normalizePreference("evil"), "automatic");
+  assert.equal(normalizePreference("byok"), "automatic");
+  assert.deepEqual(PREFERENCES, ["automatic", "chrome-ai"]);
   assert.equal(normalizePreference(undefined), "automatic");
 });
 
@@ -126,4 +119,35 @@ test("packaged extension has no localhost dependency and no embedded keys", asyn
   const manifest = JSON.parse(await readFile(new URL("../extension/manifest.json", import.meta.url), "utf8"));
   assert.deepEqual([...manifest.permissions].sort(), ["activeTab", "scripting", "sidePanel", "storage"]);
   assert.equal(manifest.host_permissions, undefined);
+});
+
+test("a model that hangs is timed out and falls back instead of freezing the scan", async () => {
+  const hanging = {
+    availability: async () => "available",
+    create: async () => ({ prompt: (_input, { signal }) => new Promise((_, reject) => signal.addEventListener("abort", () => reject(new DOMException("x", "AbortError")))), destroy() {} })
+  };
+  const providers = createProviders({ "chrome-ai": createChromeAiProvider({ languageModel: hanging, promptTimeoutMs: 50 }) });
+  const outcome = await runDeeperScan("chrome-ai", document, providers);
+  assert.equal(outcome.ok, false);
+  assert.equal(outcome.code, "timeout");
+});
+
+test("an in-progress model download is reported honestly and never treated as ready", async () => {
+  let created = 0;
+  const model = { availability: async () => "downloading", create: async () => { created++; } };
+  const provider = createChromeAiProvider({ languageModel: model });
+  assert.equal((await provider.availability()).state, "downloading");
+  const outcome = await runDeeperScan("chrome-ai", document, createProviders({ "chrome-ai": provider }));
+  assert.equal(outcome.code, "downloading");
+  assert.equal(created, 0);
+});
+
+test("invalid model output is reported as a failure; fully unsupported output yields zero findings", async () => {
+  const invalid = await runDeeperScan("chrome-ai", document, providersWith(fakeModel({ reply: "not json {{{" })));
+  assert.equal(invalid.ok, false);
+  assert.equal(invalid.code, "invalid");
+  const invented = JSON.stringify({ findings: [{ blockId: "block-1", classification: "concern", title: "Invented", plainEnglish: "P", originalQuote: "a sentence that is nowhere in the page" }] });
+  const unsupported = await runDeeperScan("chrome-ai", document, providersWith(fakeModel({ reply: invented })));
+  assert.equal(unsupported.ok, true);
+  assert.equal(unsupported.result.findings.length, 0);
 });

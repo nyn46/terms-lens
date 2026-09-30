@@ -27,10 +27,10 @@
         <p class="tip">Tip: open the site's Terms, Privacy or Refund page first, then scan it.</p>
       </section>
 
-      <section id="activation" class="permission-card hidden">
-        <strong>Let Terms Lens read this page</strong>
-        <p>Chrome only lets Terms Lens read a page after you click its toolbar icon on that page. Click the Terms Lens icon in the toolbar (pin it from the puzzle-piece menu if you cannot see it), then press the button below. Browser pages such as chrome:// cannot be scanned.</p>
-        <button id="activationRetry" class="primary-button" type="button">Scan this page</button>
+      <section id="access" class="permission-card hidden">
+        <strong id="accessTitle">Let Terms Lens read this page</strong>
+        <p id="accessText"></p>
+        <button id="accessButton" class="primary-button" type="button">Scan this page</button>
       </section>
 
       <section id="loading" class="loading-view hidden">
@@ -53,11 +53,21 @@
           <button type="button" class="mode-tab" data-mode="private-ai" aria-pressed="false">Private AI Scan</button>
         </div>
 
-        <div id="aiOffer" class="ai-offer hidden">
-          <strong id="aiOfferTitle">Want a deeper look?</strong>
-          <p id="aiOfferText"></p>
-          <progress id="aiProgress" class="hidden" max="1" value="0"></progress>
-          <button id="aiButton" class="secondary-button" type="button">Run Private AI Scan</button>
+        <div id="deeper" class="ai-offer">
+          <strong>Want a deeper look?</strong>
+          <div id="aiOffer" class="ai-section hidden">
+            <p id="aiOfferText"></p>
+            <progress id="aiProgress" class="hidden" max="1" value="0"></progress>
+            <button id="aiButton" class="secondary-button" type="button">Run Private AI Scan</button>
+          </div>
+          <div class="handoff">
+            <p id="handoffIntro">Continue in an AI assistant you already use. Terms Lens copies a ready-made prompt when you click; nothing is sent until you paste it yourself.</p>
+            <div class="handoff-buttons">
+              <button id="chatgptButton" class="secondary-button" type="button">Continue in ChatGPT</button>
+              <button id="geminiButton" class="secondary-button" type="button">Continue in Gemini</button>
+            </div>
+            <p id="handoffStatus" class="handoff-status hidden" role="status"></p>
+          </div>
         </div>
         <p id="notice" class="notice hidden" role="status"></p>
 

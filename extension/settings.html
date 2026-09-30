@@ -28,7 +28,7 @@
     </header>
     <main>
       <fieldset id="options">
-        <legend>How should deeper scans run?</legend>
+        <legend>Private AI Scan</legend>
         <label class="option">
           <input type="radio" name="provider" value="automatic" />
           <div><strong>Automatic (recommended)</strong><span>Show the Quick Scan first. If Chrome's on-device AI is supported, offer an optional Private AI Scan afterwards.</span></div>
@@ -37,16 +37,9 @@
           <input type="radio" name="provider" value="chrome-ai" />
           <div><strong>Chrome on-device AI</strong><span>Run the Private AI Scan automatically after the Quick Scan whenever Chrome's model is already on this device. Page text stays on your device. Chrome's model is only downloaded after you click a download button.</span></div>
         </label>
-        <label class="option disabled">
-          <input type="radio" name="provider" value="cloud" disabled />
-          <div><strong>Terms Lens Cloud (coming later)</strong><span>A hosted option that would send page text to Terms Lens servers. It is not available yet, and nothing is sent anywhere today.</span></div>
-        </label>
-        <label class="option disabled">
-          <input type="radio" name="provider" value="byok" disabled />
-          <div><strong>Use my own provider key (coming later)</strong><span>Would send page text to an AI provider you choose, using your key. Not available yet.</span></div>
-        </label>
       </fieldset>
       <p id="saved" class="saved" role="status"></p>
+      <p class="saved" style="color:var(--muted)">Terms Lens never asks for an account or API key. "Continue in ChatGPT" and "Continue in Gemini" only copy a prompt to your clipboard after you click, then open the site. You paste it yourself.</p>
       <div class="status" id="aiStatus">Checking Chrome's on-device AI...</div>
     </main>
     <footer>Plain-language guidance, not legal advice.</footer>

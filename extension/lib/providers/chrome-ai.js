@@ -67,7 +67,7 @@ export function chunkBlocks(blocks, size = CHUNK_CHARS) {
   return chunks;
 }
 
-export function createChromeAiProvider({ languageModel = globalThis.LanguageModel } = {}) {
+export function createChromeAiProvider({ languageModel = globalThis.LanguageModel, promptTimeoutMs = 90_000 } = {}) {
   async function availability() {
     if (!languageModel || typeof languageModel.availability !== "function") {
       return { state: "unavailable", reason: "This version of Chrome does not offer on-device AI." };
@@ -101,6 +101,9 @@ export function createChromeAiProvider({ languageModel = globalThis.LanguageMode
     if (status.state === "unavailable") {
       throw new ProviderError("unavailable", status.reason || "On-device AI is unavailable.");
     }
+    if (status.state === "downloading") {
+      throw new ProviderError("downloading", "Chrome is still downloading its on-device model.");
+    }
 
     let session;
     try {
@@ -109,21 +112,38 @@ export function createChromeAiProvider({ languageModel = globalThis.LanguageMode
       const relevant = document.blocks.filter((block) => CANDIDATE_PATTERN.test(block.text));
       const chunks = chunkBlocks(relevant).slice(0, MAX_CHUNKS);
       const findings = [];
+      let invalidChunks = 0;
       for (const [index, chunk] of chunks.entries()) {
         onProgress?.({ done: index, total: chunks.length });
         let raw;
+        const timer = new AbortController();
+        const timeout = setTimeout(() => timer.abort(), promptTimeoutMs);
+        const onAbort = () => timer.abort();
+        signal?.addEventListener("abort", onAbort);
         try {
           raw = await session.prompt(
             JSON.stringify({ blocks: chunk.map(({ id, heading, text }) => ({ blockId: id, heading, text })) }),
-            { responseConstraint: RESPONSE_SCHEMA, signal }
+            { responseConstraint: RESPONSE_SCHEMA, signal: timer.signal }
           );
         } catch (error) {
-          if (error?.name === "AbortError") throw error;
+          if (signal?.aborted) throw error;
+          if (timer.signal.aborted) throw new ProviderError("timeout", "On-device AI took too long.");
           throw new ProviderError("failed", "On-device AI could not finish this scan.");
+        } finally {
+          clearTimeout(timeout);
+          signal?.removeEventListener("abort", onAbort);
         }
-        findings.push(...parseModelOutput(raw, chunk));
+        const parsed = parseModelJson(raw);
+        if (!parsed) {
+          invalidChunks++;
+          continue;
+        }
+        findings.push(...parseModelOutput(parsed, chunk));
       }
       onProgress?.({ done: chunks.length, total: chunks.length });
+      if (chunks.length && invalidChunks === chunks.length) {
+        throw new ProviderError("invalid", "On-device AI returned an answer Terms Lens could not use.");
+      }
       return buildResult({
         document,
         findings: findings.map((finding) => ({ ...finding, confidence: Math.min(finding.confidence || 0.6, 0.85) })),
@@ -140,7 +160,17 @@ export function createChromeAiProvider({ languageModel = globalThis.LanguageMode
   return { id: "chrome-ai", label: "Private AI Scan", availability, analyze };
 }
 
-/** Parses and validates the model's JSON; anything malformed yields no findings. */
+/** Returns the parsed object, or null if the model's reply is not a JSON object with a findings array. */
+export function parseModelJson(raw) {
+  try {
+    const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+    return parsed && typeof parsed === "object" && Array.isArray(parsed.findings) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Validates the model's findings against the source blocks; anything unsupported is dropped. */
 export function parseModelOutput(raw, blocks) {
   let parsed;
   try {

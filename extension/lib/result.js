@@ -14,14 +14,24 @@ export function summarize(findings) {
   return `Found ${concern} potential concern${s(concern)}, ${caution} important condition${s(caution)}, and ${positive} user-friendly provision${s(positive)}.`;
 }
 
-/** Removes repeated findings: same classification, category and quoted wording. */
+/** A finding is only displayable with a real, non-empty excerpt. */
+export function hasEvidence(finding) {
+  return normalizeText(finding?.originalQuote).length >= 8;
+}
+
+/**
+ * Removes true repeats: same title, classification, category and quoted wording
+ * (case and spacing ignored). Findings that merely share a title, or merely
+ * share a category, stay separate.
+ */
 export function dedupeFindings(findings) {
   const seen = new Set();
   const unique = [];
   for (const finding of findings) {
     const key = [
+      normalizeText(finding.title).toLowerCase(),
       finding.classification,
-      finding.category,
+      normalizeText(finding.category).toLowerCase(),
       normalizeText(finding.originalQuote).toLowerCase()
     ].join("|");
     if (seen.has(key)) continue;
@@ -71,7 +81,7 @@ export function verifyAndCleanFindings(result, blocks) {
 }
 
 export function buildResult({ document, findings, mode, limitations, limit = 30, extra = {} }) {
-  const final = dedupeFindings(findings).slice(0, limit);
+  const final = dedupeFindings(findings.filter(hasEvidence)).slice(0, limit);
   return {
     documentTitle: document.title,
     effectiveDate: null,

@@ -46,14 +46,28 @@ async function readPage(requestedTabId) {
   try {
     const existing = await runInPage(tabId);
     const page = existing ?? (await injectAndRun(tabId));
+    if (page?.contentType === "application/pdf") return { unsupported: "pdf" };
     if (!page?.currentDocument) return { error: "No readable page content was found." };
     return { tabId, page };
   } catch {
-    // Without activeTab for this page (or on a browser-internal page) Chrome refuses the script.
-    return { needsActivation: true };
+    // Chrome refused the script: this page is off limits, or access has not been granted yet.
+    return classifyBlockedTab(tabId);
   }
 }
 
+async function classifyBlockedTab(tabId) {
+  let url = "";
+  try {
+    url = (await chrome.tabs.get(tabId)).url || "";
+  } catch {
+    // The URL is only visible once the user has invoked the extension on this tab.
+  }
+  if (/^(chrome|chrome-extension|edge|about|devtools|view-source|file):/i.test(url)) return { unsupported: "browser-page" };
+  if (/^https:\/\/(chromewebstore\.google\.com|chrome\.google\.com\/webstore)/i.test(url)) return { unsupported: "web-store" };
+  if (/\.pdf($|[?#])/i.test(url)) return { unsupported: "pdf" };
+  if (/^https?:/i.test(url)) return { needsPermission: true, origin: new URL(url).origin, tabId };
+  return { needsActivation: true };
+}
 async function injectAndRun(tabId) {
   await chrome.scripting.executeScript({ target: { tabId }, files: ["content-script.js"] });
   return runInPage(tabId);
