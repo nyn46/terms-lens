@@ -1,114 +1,65 @@
-chrome.runtime.onInstalled.addListener(() => {
-  chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
-});
+// The service worker only reads the page the user chose to scan. All analysis
+// (Quick Scan and Private AI Scan) runs in the side panel, on this device.
 
+// Clicking the toolbar icon grants "activeTab" for that page and opens the panel.
 chrome.action.onClicked.addListener((tab) => {
-  (async () => {
-    await rememberPageTab(tab);
-    if (tab?.windowId) await chrome.sidePanel.open({ windowId: tab.windowId });
-  })().catch(() => {});
+  if (tab?.windowId) chrome.sidePanel.open({ windowId: tab.windowId }).catch(() => {});
+  rememberTab(tab?.id).catch(() => {});
 });
 
 chrome.tabs.onActivated.addListener(({ tabId }) => {
-  chrome.tabs.get(tabId).then(rememberPageTab).catch(() => {});
-});
-
-chrome.tabs.onUpdated.addListener((_tabId, changeInfo, tab) => {
-  if (changeInfo.status === "complete" && tab.active) {
-    rememberPageTab(tab).catch(() => {});
-  }
+  rememberTab(tabId).catch(() => {});
 });
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  (async () => {
-    sendResponse(await handleMessage(message));
-  })();
+  handleMessage(message).then(sendResponse);
   return true;
 });
 
 async function handleMessage(message) {
   try {
-    if (message?.type === "GET_ACTIVE_TAB") {
-      return { tab: await getActiveTab() };
-    }
-
-    if (message?.type === "DISCOVER_CURRENT_PAGE") {
-      return await discoverOnActiveTab();
-    }
-
-    if (message?.type === "OPEN_AND_HIGHLIGHT") {
-      return await openAndHighlight(message.url, message.quote);
-    }
-
+    if (message?.type === "SCAN_TAB") return await readPage(message.tabId);
+    if (message?.type === "HIGHLIGHT_IN_TAB") return await highlightInTab(message.tabId, message.quote);
+    if (message?.type === "OPEN_AND_HIGHLIGHT") return await openAndHighlight(message.url, message.quote);
     return { error: "Unknown request." };
   } catch (error) {
     return { error: error.message || "Request failed." };
   }
 }
 
-async function getActiveTab() {
-  const [focusedTab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-  if (isNormalPageTab(focusedTab)) {
-    await rememberPageTab(focusedTab);
-    return focusedTab;
-  }
-
-  const { termsLensLastPageTab } = await chrome.storage.session.get("termsLensLastPageTab");
-  if (termsLensLastPageTab?.id) {
-    try {
-      const rememberedTab = await chrome.tabs.get(termsLensLastPageTab.id);
-      if (isNormalPageTab(rememberedTab)) return rememberedTab;
-    } catch {
-      await chrome.storage.session.remove("termsLensLastPageTab");
-    }
-  }
-
-  const tabs = await chrome.tabs.query({ active: true });
-  const normalTab = tabs.find(isNormalPageTab);
-  if (normalTab) {
-    await rememberPageTab(normalTab);
-    return normalTab;
-  }
-
-  return null;
+async function rememberTab(tabId) {
+  if (tabId == null) return;
+  await chrome.storage.session.set({ termsLensTabId: tabId });
 }
 
-async function discoverOnActiveTab() {
-  const tab = await getActiveTab();
-  if (!tab?.id || !/^https?:/i.test(tab.url || "")) {
-    throw new Error("Open a normal website before scanning.");
-  }
-  const origin = new URL(tab.url).origin;
-  const hasPermission = await chrome.permissions.contains({ origins: [`${origin}/*`] });
-  if (!hasPermission) {
-    return {
-      needsPermission: true,
-      origin,
-      pageUrl: tab.url,
-      pageTitle: tab.title
-    };
-  }
-  const result = await discoverInTab(tab.id);
-  return {
-    ...validateDiscoveryResult(result),
-    tabId: tab.id,
-    pageUrl: tab.url,
-    pageTitle: tab.title
-  };
+async function resolveTabId(requested) {
+  if (requested != null) return requested;
+  const { termsLensTabId } = await chrome.storage.session.get("termsLensTabId");
+  if (termsLensTabId != null) return termsLensTabId;
+  const [active] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+  return active?.id ?? null;
 }
 
-async function discoverInTab(tabId) {
-  const existingResult = await runDiscoveryScript(tabId);
-  if (existingResult) return existingResult;
-
-  await chrome.scripting.executeScript({
-    target: { tabId },
-    files: ["content-script.js"]
-  });
-  return runDiscoveryScript(tabId);
+async function readPage(requestedTabId) {
+  const tabId = await resolveTabId(requestedTabId);
+  if (tabId == null) return { needsActivation: true };
+  try {
+    const existing = await runInPage(tabId);
+    const page = existing ?? (await injectAndRun(tabId));
+    if (!page?.currentDocument) return { error: "No readable page content was found." };
+    return { tabId, page };
+  } catch {
+    // Without activeTab for this page (or on a browser-internal page) Chrome refuses the script.
+    return { needsActivation: true };
+  }
 }
 
-async function runDiscoveryScript(tabId) {
+async function injectAndRun(tabId) {
+  await chrome.scripting.executeScript({ target: { tabId }, files: ["content-script.js"] });
+  return runInPage(tabId);
+}
+
+async function runInPage(tabId) {
   const [{ result }] = await chrome.scripting.executeScript({
     target: { tabId },
     func: () => window.TermsLens?.discoverPage?.() ?? null
@@ -116,58 +67,24 @@ async function runDiscoveryScript(tabId) {
   return result;
 }
 
-async function openAndHighlight(url, quote) {
-  const origin = new URL(url).origin;
-  const hasPermission = await chrome.permissions.contains({ origins: [`${origin}/*`] });
-  if (!hasPermission) {
-    throw new Error("Permission is needed to highlight that policy page.");
-  }
-  const tab = await chrome.tabs.create({ url, active: true });
-  await waitForTab(tab.id);
-  await chrome.scripting.executeScript({
-    target: { tabId: tab.id },
-    files: ["content-script.js"]
-  });
+async function highlightInTab(tabId, quote) {
+  await chrome.tabs.update(tabId, { active: true });
+  await chrome.scripting.executeScript({ target: { tabId }, files: ["content-script.js"] });
   const [{ result }] = await chrome.scripting.executeScript({
-    target: { tabId: tab.id },
+    target: { tabId },
     func: (value) => window.TermsLens.highlightQuote(value),
     args: [quote]
   });
   return result;
 }
 
-function isNormalPageTab(tab) {
-  return Boolean(tab?.id && /^https?:/i.test(tab.url || ""));
-}
-
-async function rememberPageTab(tab) {
-  if (!isNormalPageTab(tab)) return;
-  await chrome.storage.session.set({
-    termsLensLastPageTab: {
-      id: tab.id,
-      windowId: tab.windowId,
-      url: tab.url,
-      title: tab.title
-    }
-  });
-}
-
-function validateDiscoveryResult(result) {
-  if (!result || typeof result !== "object") {
-    throw new Error("Could not inspect this page. Reload it and try again.");
-  }
-  const currentDocument = result.currentDocument;
-  if (!currentDocument || typeof currentDocument !== "object") {
-    throw new Error("No readable page content was found.");
-  }
-  return {
-    links: Array.isArray(result.links) ? result.links : [],
-    currentDocument: {
-      title: String(currentDocument.title || "Current page"),
-      url: String(currentDocument.url || ""),
-      blocks: Array.isArray(currentDocument.blocks) ? currentDocument.blocks : []
-    }
-  };
+async function openAndHighlight(url, quote) {
+  const origin = new URL(url).origin;
+  const hasPermission = await chrome.permissions.contains({ origins: [`${origin}/*`] });
+  const tab = await chrome.tabs.create({ url, active: true });
+  if (!hasPermission) return { found: false, opened: true };
+  await waitForTab(tab.id);
+  return highlightInTab(tab.id, quote);
 }
 
 function waitForTab(tabId) {

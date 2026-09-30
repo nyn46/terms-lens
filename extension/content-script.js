@@ -72,8 +72,16 @@
   function highlightQuote(quote) {
     const target = cleanText(quote);
     if (!target) return { found: false };
-    const candidates = [...document.querySelectorAll("p, li, td, div")];
-    const element = candidates.find((candidate) => cleanText(candidate.textContent).includes(target));
+    const candidates = [...document.querySelectorAll("p, li, td, th, h1, h2, h3, h4, div, section, article")];
+    let element = null;
+    let shortest = Infinity;
+    for (const candidate of candidates) {
+      const text = cleanText(candidate.textContent);
+      if (text.length < shortest && text.includes(target)) {
+        element = candidate;
+        shortest = text.length;
+      }
+    }
     if (!element) return { found: false };
     element.scrollIntoView({ behavior: "smooth", block: "center" });
     const originalOutline = element.style.outline;

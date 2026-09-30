@@ -13,55 +13,30 @@
         <h1>Terms Lens</h1>
         <p>Know what you are agreeing to.</p>
       </div>
-      <button id="settingsButton" class="icon-button" type="button" aria-label="Settings" aria-expanded="false" aria-controls="settings">•••</button>
+      <button id="settingsButton" class="icon-button" type="button" aria-label="Settings">&#9881;</button>
     </header>
 
     <main id="content">
       <div id="announcer" class="visually-hidden" aria-live="polite" aria-atomic="true"></div>
 
-      <section id="settings" class="panel hidden" aria-label="Settings">
-        <label for="apiUrl">Analyzer URL</label>
-        <p id="apiUrlHint" class="field-hint">Local server used to review extracted policy text.</p>
-        <div class="input-row">
-          <input id="apiUrl" type="url" value="http://127.0.0.1:8787" autocomplete="off" spellcheck="false" aria-describedby="apiUrlHint" />
-          <button id="saveSettings" class="secondary-button" type="button">Save</button>
-        </div>
+      <section id="idle" class="hero">
+        <h2>Check the fine print on this page</h2>
+        <p>Terms Lens reads the page you are on and points out clauses worth a closer look, with the original wording beside each one.</p>
+        <button id="scanButton" class="primary-button" type="button">Scan this page</button>
+        <p class="privacy-note">Quick Scan runs entirely on your device. No account, no key, and the page text is never sent anywhere.</p>
+        <p class="tip">Tip: open the site's Terms, Privacy or Refund page first, then scan it.</p>
       </section>
 
-      <section id="status" class="status-card">
-        <span class="pulse" aria-hidden="true"></span>
-        <div>
-          <strong>Inspecting this website</strong>
-          <p>Looking for its legal documents.</p>
-        </div>
-      </section>
-
-      <section id="permissionPrompt" class="permission-card hidden">
-        <strong>Scan this site?</strong>
-        <p id="permissionMessage">Terms Lens needs temporary access to this website to find legal documents.</p>
-        <button id="grantSiteAccess" class="secondary-button" type="button">Allow and scan</button>
-      </section>
-
-      <section id="documentPicker" class="hidden">
-        <div class="section-heading">
-          <h2>Documents found</h2>
-          <span id="documentCount" class="count"></span>
-        </div>
-        <div id="documentList" class="document-list"></div>
-        <div class="manual-entry">
-          <label for="manualUrl">Or paste a policy URL</label>
-          <p id="manualUrlHint" class="field-hint">Use a public HTTP or HTTPS legal document.</p>
-          <div class="input-row">
-            <input id="manualUrl" type="url" placeholder="https://example.com/terms" autocomplete="url" spellcheck="false" aria-describedby="manualUrlHint" />
-            <button id="analyzeManual" class="secondary-button" type="button">Analyze</button>
-          </div>
-        </div>
+      <section id="activation" class="permission-card hidden">
+        <strong>Let Terms Lens read this page</strong>
+        <p>Chrome only lets Terms Lens read a page after you click its toolbar icon on that page. Click the Terms Lens icon in the toolbar (pin it from the puzzle-piece menu if you cannot see it), then press the button below. Browser pages such as chrome:// cannot be scanned.</p>
+        <button id="activationRetry" class="primary-button" type="button">Scan this page</button>
       </section>
 
       <section id="loading" class="loading-view hidden">
         <div class="loader"></div>
-        <h2>Reading the fine print</h2>
-        <p id="loadingMessage">Extracting clauses and preserving the evidence.</p>
+        <h2 id="loadingTitle">Reading the fine print</h2>
+        <p id="loadingMessage">Checking the page on your device.</p>
       </section>
 
       <section id="results" class="hidden">
@@ -70,7 +45,21 @@
           <h2 id="resultTitle"></h2>
           <p id="resultSummary"></p>
           <div id="summaryCounts" class="summary-counts"></div>
+          <p id="modeExplainer" class="mode-explainer"></p>
         </div>
+
+        <div id="modeTabs" class="mode-tabs hidden" role="group" aria-label="Choose a result">
+          <button type="button" class="mode-tab active" data-mode="quick" aria-pressed="true">Quick Scan</button>
+          <button type="button" class="mode-tab" data-mode="private-ai" aria-pressed="false">Private AI Scan</button>
+        </div>
+
+        <div id="aiOffer" class="ai-offer hidden">
+          <strong id="aiOfferTitle">Want a deeper look?</strong>
+          <p id="aiOfferText"></p>
+          <progress id="aiProgress" class="hidden" max="1" value="0"></progress>
+          <button id="aiButton" class="secondary-button" type="button">Run Private AI Scan</button>
+        </div>
+        <p id="notice" class="notice hidden" role="status"></p>
 
         <div id="filters" class="filters" aria-label="Filter findings">
           <button class="filter active" type="button" data-filter="all" aria-pressed="true">All</button>
@@ -81,7 +70,23 @@
 
         <div id="findings" class="findings"></div>
         <div id="limitations" class="limitations"></div>
-        <button id="scanAgain" class="secondary-button full-width" type="button">Scan another document</button>
+
+        <div id="otherDocs" class="other-docs hidden">
+          <h3>Other legal pages on this site</h3>
+          <p class="field-hint">Scanning one asks Chrome for access to that site. It is fetched without your cookies.</p>
+          <div id="documentList" class="document-list"></div>
+        </div>
+
+        <details class="manual-entry">
+          <summary>Scan a page by its web address</summary>
+          <label for="manualUrl">Policy URL</label>
+          <div class="input-row">
+            <input id="manualUrl" type="url" placeholder="https://example.com/terms" autocomplete="url" spellcheck="false" />
+            <button id="analyzeManual" class="secondary-button" type="button">Scan</button>
+          </div>
+        </details>
+
+        <button id="scanAgain" class="secondary-button full-width" type="button">Scan this page again</button>
       </section>
 
       <section id="error" class="error-card hidden" role="alert">
@@ -92,6 +97,6 @@
     </main>
 
     <footer>Plain-language guidance, not legal advice.</footer>
-    <script src="sidepanel.js"></script>
+    <script type="module" src="sidepanel.js"></script>
   </body>
 </html>

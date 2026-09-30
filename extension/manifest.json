@@ -1,19 +1,23 @@
 {
   "manifest_version": 3,
   "name": "Terms Lens",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "minimum_chrome_version": "114",
-  "description": "See the clauses that deserve your attention before you agree.",
-  "permissions": ["scripting", "storage", "sidePanel", "tabs"],
+  "description": "See the clauses that deserve your attention before you agree. Scans run on your device.",
+  "permissions": ["activeTab", "scripting", "storage", "sidePanel"],
   "optional_host_permissions": ["https://*/*", "http://*/*"],
   "background": {
     "service_worker": "service-worker.js",
     "type": "module"
   },
   "action": {
-    "default_title": "Open Terms Lens"
+    "default_title": "Scan this page with Terms Lens"
   },
   "side_panel": {
     "default_path": "sidepanel.html"
+  },
+  "options_ui": {
+    "page": "settings.html",
+    "open_in_tab": true
   }
 }

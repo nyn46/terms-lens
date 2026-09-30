@@ -1,172 +1,431 @@
+import { sanitizeDocument } from "./lib/text.js";
+import { countFindings } from "./lib/result.js";
+import {
+  createProviders,
+  normalizePreference,
+  runDeeperScan,
+  runQuickScan
+} from "./lib/providers/index.js";
+
+const providers = createProviders();
+
 const state = {
-  discovery: null,
-  result: null,
-  selectedUrl: null,
-  pendingOrigin: null,
+  preference: "automatic",
+  document: null,
+  source: null, // { kind: "tab", tabId } or { kind: "url", url }
+  links: [],
+  results: { quick: null, "private-ai": null },
+  mode: "quick",
   filter: "all",
-  apiUrl: "http://127.0.0.1:8787"
+  busy: false,
+  scanToken: 0
 };
 
 const $ = (selector) => document.querySelector(selector);
-const views = ["status", "permissionPrompt", "documentPicker", "loading", "results", "error"];
+const views = ["idle", "activation", "loading", "results", "error"];
 
-document.addEventListener("DOMContentLoaded", init);
+const MODE_TEXT = {
+  quick: {
+    badge: "Quick Scan",
+    explainer:
+      "Quick Scan checks this page for known phrase patterns, entirely on your device. It is not an AI or legal review and may miss clauses that depend on context."
+  },
+  "private-ai": {
+    badge: "Private AI Scan",
+    explainer:
+      "Private AI Scan uses Chrome's on-device model, so the page text is processed on your device and not sent anywhere. It can still misread context, so check the original wording."
+  }
+};
+
+init();
 
 async function init() {
-  const saved = await chrome.storage.local.get("apiUrl");
-  state.apiUrl = saved.apiUrl || state.apiUrl;
-  $("#apiUrl").value = state.apiUrl;
+  const saved = await chrome.storage.local.get("providerPreference").catch(() => ({}));
+  state.preference = normalizePreference(saved.providerPreference);
   bindEvents();
-  await discover();
+  showView("idle");
 }
 
 function bindEvents() {
-  $("#settingsButton").addEventListener("click", () => {
-    const isHidden = $("#settings").classList.toggle("hidden");
-    $("#settingsButton").setAttribute("aria-expanded", String(!isHidden));
+  $("#settingsButton").addEventListener("click", () => chrome.runtime.openOptionsPage());
+  $("#scanButton").addEventListener("click", () => scanCurrentPage());
+  $("#activationRetry").addEventListener("click", () => scanCurrentPage());
+  $("#scanAgain").addEventListener("click", () => scanCurrentPage());
+  $("#retry").addEventListener("click", () => scanCurrentPage());
+  $("#analyzeManual").addEventListener("click", () => scanUrl($("#manualUrl").value));
+  $("#aiButton").addEventListener("click", () => runPrivateScan());
+  $("#modeTabs").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-mode]");
+    if (button && state.results[button.dataset.mode]) setMode(button.dataset.mode);
   });
-  $("#saveSettings").addEventListener("click", async () => {
-    state.apiUrl = $("#apiUrl").value.replace(/\/$/, "");
-    await chrome.storage.local.set({ apiUrl: state.apiUrl });
-    $("#settings").classList.add("hidden");
-    $("#settingsButton").setAttribute("aria-expanded", "false");
-    announce("Analyzer URL saved.");
-  });
-  $("#analyzeManual").addEventListener("click", () => analyzeUrl($("#manualUrl").value));
-  $("#grantSiteAccess").addEventListener("click", grantSiteAccessAndDiscover);
-  $("#retry").addEventListener("click", discover);
-  $("#scanAgain").addEventListener("click", () => showView("documentPicker"));
   $("#filters").addEventListener("click", (event) => {
     const button = event.target.closest("[data-filter]");
     if (!button) return;
     state.filter = button.dataset.filter;
-    document.querySelectorAll(".filter").forEach((item) => {
-      const isActive = item === button;
-      item.classList.toggle("active", isActive);
-      item.setAttribute("aria-pressed", String(isActive));
-    });
+    syncFilterButtons();
     renderFindings();
   });
-  document.addEventListener("blur", syncFieldValidity, true);
-  document.addEventListener("input", syncFieldValidity);
+  chrome.storage.onChanged.addListener((changes) => {
+    if (changes.providerPreference) {
+      state.preference = normalizePreference(changes.providerPreference.newValue);
+    }
+  });
+  // A result belongs to one page; when the user moves to another tab, start fresh.
+  chrome.tabs.onActivated.addListener(({ tabId }) => {
+    if (state.busy || state.source?.kind !== "tab" || state.source.tabId === tabId) return;
+    resetToIdle();
+  });
 }
 
 function showView(name) {
-  if (name !== "error") $("#errorMessage").textContent = "";
   views.forEach((id) => $("#" + id).classList.toggle("hidden", id !== name));
   const labels = {
-    status: "Inspecting this website.",
-    permissionPrompt: "Site permission is needed before scanning.",
-    documentPicker: "Legal document options are ready.",
-    loading: "Reading the selected document.",
-    results: "Analysis results are ready.",
+    idle: "Ready to scan.",
+    activation: "Terms Lens needs you to click its toolbar icon on this page.",
+    loading: "Scanning.",
+    results: "Scan results are ready.",
     error: "The scan could not finish."
   };
   announce(labels[name] || "");
 }
 
-async function discover() {
-  showView("status");
+function resetToIdle() {
+  state.scanToken++;
+  state.document = null;
+  state.source = null;
+  state.results = { quick: null, "private-ai": null };
+  showView("idle");
+}
+
+// ---- Quick Scan (local, no dependencies) -------------------------------------------------
+
+async function scanCurrentPage() {
+  if (state.busy) return;
+  const token = ++state.scanToken;
+  state.busy = true;
+  showLoading("Reading the fine print", "Checking the page on your device.");
   try {
-    const response = await chrome.runtime.sendMessage({ type: "DISCOVER_CURRENT_PAGE" });
+    const response = await chrome.runtime.sendMessage({ type: "SCAN_TAB" });
+    if (token !== state.scanToken) return;
+    if (response?.needsActivation) return showView("activation");
     if (response?.error) throw new Error(response.error);
-    if (response?.needsPermission) {
-      state.pendingOrigin = response.origin;
-      $("#permissionMessage").textContent = `Terms Lens needs temporary access to ${response.origin} to find legal documents on this site.`;
-      showView("permissionPrompt");
-      return;
-    }
-    state.discovery = response;
-    renderDocuments(response.links || []);
-    showView("documentPicker");
+
+    const { currentDocument, links } = response.page;
+    state.links = Array.isArray(links) ? links : [];
+    state.source = { kind: "tab", tabId: response.tabId };
+    await completeQuickScan(currentDocument, token);
   } catch (error) {
-    showError(error.message);
+    if (token === state.scanToken) showError(friendly(error));
+  } finally {
+    if (token === state.scanToken) state.busy = false;
   }
 }
 
-async function grantSiteAccessAndDiscover() {
-  if (!state.pendingOrigin) {
-    await discover();
+async function scanUrl(rawUrl) {
+  if (state.busy) return;
+  const token = ++state.scanToken;
+  state.busy = true;
+  try {
+    const parsed = new URL(String(rawUrl).trim());
+    if (!/^https?:$/.test(parsed.protocol)) throw new Error("Enter a valid HTTP or HTTPS address.");
+    const granted = await chrome.permissions.request({ origins: [`${parsed.origin}/*`] });
+    if (!granted) throw new Error("Chrome needs your permission to read that page.");
+    showLoading("Fetching the page", "Downloading the page without your cookies, then scanning it on your device.");
+    const response = await fetch(parsed.href, { credentials: "omit", redirect: "follow" });
+    if (!response.ok) throw new Error(`That page returned HTTP ${response.status}.`);
+    const parsedDocument = new DOMParser().parseFromString(await response.text(), "text/html");
+    state.links = [];
+    state.source = { kind: "url", url: parsed.href };
+    await completeQuickScan(
+      { title: parsedDocument.title || parsed.hostname, url: parsed.href, blocks: extractBlocks(parsedDocument) },
+      token
+    );
+  } catch (error) {
+    if (token === state.scanToken) showError(friendly(error));
+  } finally {
+    if (token === state.scanToken) state.busy = false;
+  }
+}
+
+async function completeQuickScan(rawDocument, token) {
+  let pageDocument;
+  try {
+    pageDocument = sanitizeDocument(rawDocument);
+  } catch {
+    throw new Error("There is not enough readable text on this page to scan. Try the site's Terms or Privacy page.");
+  }
+  const quick = await runQuickScan(pageDocument, providers);
+  if (token !== state.scanToken) return;
+  state.document = pageDocument;
+  state.results = { quick, "private-ai": null };
+  state.mode = "quick";
+  state.filter = "all";
+  renderResults();
+  showView("results");
+  state.busy = false;
+  offerPrivateScan();
+}
+
+// ---- Private AI Scan (optional, on-device) -----------------------------------------------
+
+async function offerPrivateScan() {
+  const offer = $("#aiOffer");
+  $("#notice").classList.add("hidden");
+  $("#aiProgress").classList.add("hidden");
+  offer.classList.add("hidden");
+  const token = state.scanToken;
+  const { state: availability } = await providers["chrome-ai"].availability();
+  if (token !== state.scanToken) return;
+
+  const copy = {
+    available: ["Want a deeper look?", "Private AI Scan reads the page in context using Chrome's on-device model. The text stays on this device.", "Run Private AI Scan"],
+    downloadable: ["Want a deeper look?", "Private AI Scan needs a one-time model download that Chrome manages. It can be large, so nothing downloads until you click. The text stays on this device.", "Download model and scan"],
+    downloading: ["Chrome is preparing the model", "Chrome is already downloading its on-device model. You can continue when you are ready; this may take a few minutes.", "Continue with Private AI Scan"]
+  }[availability];
+
+  if (!copy) {
+    // Unsupported: keep the Quick Scan result clean and useful, with a quiet one-line note.
+    offer.classList.remove("hidden");
+    offer.classList.add("passive");
+    $("#aiOfferTitle").textContent = "Quick Scan only";
+    $("#aiOfferText").textContent = "Private AI Scan is not available on this device or Chrome version. Your Quick Scan results above are complete.";
+    $("#aiButton").classList.add("hidden");
     return;
   }
-  try {
-    const granted = await chrome.permissions.request({ origins: [`${state.pendingOrigin}/*`] });
-    if (!granted) throw new Error("Permission is needed to scan this site.");
-    state.pendingOrigin = null;
-    await discover();
-  } catch (error) {
-    showError(error.message);
-  }
+  offer.classList.remove("hidden", "passive");
+  $("#aiOfferTitle").textContent = copy[0];
+  $("#aiOfferText").textContent = copy[1];
+  $("#aiButton").textContent = copy[2];
+  $("#aiButton").classList.remove("hidden");
+  $("#aiButton").disabled = false;
+  // Only an already-installed model runs automatically; a download always needs a click.
+  if (state.preference === "chrome-ai" && availability === "available") runPrivateScan();
 }
 
-function renderDocuments(links) {
-  $("#documentCount").textContent = `${links.length} found`;
-  const list = $("#documentList");
-  list.replaceChildren();
-
-  if (looksLikeLegalDocument(state.discovery.currentDocument)) {
-    list.append(createDocumentButton({
-      label: "Analyze this page",
-      url: state.discovery.currentDocument.url,
-      current: true
-    }));
-  }
-  links.forEach((link) => list.append(createDocumentButton(link)));
-  if (!list.children.length) {
-    list.innerHTML = '<div class="empty">No obvious legal links found. Paste the policy URL below.</div>';
-  }
-}
-
-function looksLikeLegalDocument(document) {
-  return /terms|privacy|legal|refund|subscription|eula/i.test(`${document.title} ${document.url}`);
-}
-
-function createDocumentButton(link) {
-  const button = document.createElement("button");
-  button.className = "document-button";
-  button.type = "button";
-  button.innerHTML = `<div><strong>${escapeHtml(link.label || "Legal document")}</strong><span>${escapeHtml(link.url)}</span></div><b>›</b>`;
-  button.addEventListener("click", async () => {
-    try {
-      if (link.current) await analyzeDocument(state.discovery.currentDocument);
-      else await analyzeUrl(link.url, link.label);
-    } catch (error) {
-      showError(error.message);
+async function runPrivateScan() {
+  if (state.busy || !state.document) return;
+  const token = state.scanToken;
+  state.busy = true;
+  const button = $("#aiButton");
+  const progress = $("#aiProgress");
+  button.disabled = true;
+  button.textContent = "Scanning on your device...";
+  $("#notice").classList.add("hidden");
+  const outcome = await runDeeperScan("chrome-ai", state.document, providers, {
+    onDownloadProgress(loaded) {
+      progress.classList.remove("hidden");
+      progress.value = loaded;
+      button.textContent = `Downloading model ${Math.round(loaded * 100)}%`;
+    },
+    onProgress({ done, total }) {
+      progress.classList.remove("hidden");
+      progress.value = total ? done / total : 0;
+      button.textContent = `Reading section ${Math.min(done + 1, total)} of ${total}`;
     }
   });
-  return button;
+  state.busy = false;
+  if (token !== state.scanToken) return;
+  progress.classList.add("hidden");
+
+  if (!outcome.ok) {
+    button.disabled = false;
+    button.textContent = "Try Private AI Scan again";
+    showNotice(`Private AI Scan could not finish, so your Quick Scan results are shown. ${outcome.reason}`);
+    offerPrivateScan();
+    return;
+  }
+  state.results["private-ai"] = outcome.result;
+  $("#aiOffer").classList.add("hidden");
+  if (!outcome.result.findings.length) {
+    showNotice("Private AI Scan found nothing it could support with the page's own wording. Your Quick Scan results are still shown.");
+  }
+  setMode("private-ai");
 }
 
-async function analyzeUrl(url, label = "Terms document") {
-  try {
-    clearFieldError($("#manualUrl"));
-    const parsed = new URL(url);
-    if (!/^https?:$/.test(parsed.protocol)) {
-      markFieldError($("#manualUrl"));
-      throw new Error("Enter a valid HTTP or HTTPS URL.");
-    }
-    const granted = await chrome.permissions.request({ origins: [`${parsed.origin}/*`] });
-    if (!granted) throw new Error("Permission is needed to read that policy page.");
-    showView("loading");
-    $("#loadingMessage").textContent = "Fetching and cleaning the policy text.";
-    const response = await fetch(parsed.href, { credentials: "omit", redirect: "follow" });
-    if (!response.ok) throw new Error(`The policy page returned HTTP ${response.status}.`);
-    const html = await response.text();
-    const document = new DOMParser().parseFromString(html, "text/html");
-    const blocks = extractBlocks(document);
-    await analyzeDocument({ title: document.title || label, url: parsed.href, blocks });
-  } catch (error) {
-    showError(error.message);
+function showNotice(text) {
+  const notice = $("#notice");
+  notice.textContent = text;
+  notice.classList.remove("hidden");
+}
+
+// ---- Rendering ---------------------------------------------------------------------------
+
+function setMode(mode) {
+  state.mode = mode;
+  state.filter = "all";
+  renderResults();
+}
+
+function renderResults() {
+  const result = state.results[state.mode];
+  const text = MODE_TEXT[state.mode];
+  $("#modeBadge").textContent = text.badge;
+  $("#resultTitle").textContent = result.documentTitle;
+  $("#resultSummary").textContent = result.findings.length
+    ? result.summary
+    : "No known patterns were found on this page. That does not mean its terms are safe.";
+  $("#modeExplainer").textContent = text.explainer;
+  const counts = countFindings(result.findings);
+  $("#summaryCounts").replaceChildren(
+    ...[["concern", "Concerns"], ["caution", "Worth knowing"], ["positive", "Good clauses"]].map(([key, label]) => {
+      const box = document.createElement("div");
+      box.className = "summary-count";
+      const number = document.createElement("strong");
+      number.textContent = String(counts[key]);
+      const caption = document.createElement("span");
+      caption.textContent = label;
+      box.append(number, caption);
+      return box;
+    })
+  );
+
+  const hasAi = Boolean(state.results["private-ai"]);
+  $("#modeTabs").classList.toggle("hidden", !hasAi);
+  document.querySelectorAll(".mode-tab").forEach((tab) => {
+    const active = tab.dataset.mode === state.mode;
+    tab.classList.toggle("active", active);
+    tab.setAttribute("aria-pressed", String(active));
+  });
+
+  syncFilterButtons();
+  renderFindings();
+  $("#limitations").textContent = (result.limitations || []).join(" ");
+  renderOtherDocuments();
+}
+
+function syncFilterButtons() {
+  document.querySelectorAll(".filter").forEach((button) => {
+    const active = button.dataset.filter === state.filter;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
+  });
+}
+
+function renderFindings() {
+  const container = $("#findings");
+  const findings = state.results[state.mode].findings.filter(
+    (item) => state.filter === "all" || item.classification === state.filter
+  );
+  container.replaceChildren();
+  if (!findings.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty";
+    empty.textContent =
+      state.filter === "all" && state.mode === "quick"
+        ? "Nothing matched Quick Scan's known patterns here. If this is not a terms page, open the site's Terms or Privacy page and scan again."
+        : "No supported findings in this category.";
+    container.append(empty);
+    return;
+  }
+  findings.forEach((finding) => container.append(createFindingCard(finding)));
+}
+
+function renderOtherDocuments() {
+  const list = $("#documentList");
+  list.replaceChildren();
+  const links = state.links.filter((link) => link.url !== state.document.url).slice(0, 6);
+  $("#otherDocs").classList.toggle("hidden", links.length === 0);
+  for (const link of links) {
+    const button = document.createElement("button");
+    button.className = "document-button";
+    button.type = "button";
+    const wrap = document.createElement("div");
+    const label = document.createElement("strong");
+    label.textContent = link.label || "Legal document";
+    const url = document.createElement("span");
+    url.textContent = link.url;
+    wrap.append(label, url);
+    const arrow = document.createElement("b");
+    arrow.textContent = "›";
+    button.append(wrap, arrow);
+    button.addEventListener("click", () => scanUrl(link.url));
+    list.append(button);
   }
 }
 
-function extractBlocks(document) {
-  const root = document.querySelector("main, article, [role='main']") || document.body;
+function createFindingCard(finding) {
+  const article = document.createElement("article");
+  article.className = `finding ${finding.classification}`;
+
+  const top = document.createElement("div");
+  top.className = "finding-top";
+  const kind = document.createElement("span");
+  kind.className = "finding-label";
+  kind.textContent = `${finding.classification} · ${finding.category}`;
+  const confidence = document.createElement("span");
+  confidence.className = "finding-label";
+  confidence.textContent = `${Math.round(finding.confidence * 100)}% confidence`;
+  top.append(kind, confidence);
+
+  const title = document.createElement("h3");
+  title.textContent = finding.title;
+  const plain = paragraph(finding.plainEnglish);
+  const why = paragraph("");
+  why.className = "why";
+  const whyLabel = document.createElement("strong");
+  whyLabel.textContent = "Why it matters: ";
+  why.append(whyLabel, document.createTextNode(finding.whyItMatters));
+
+  const details = document.createElement("details");
+  const summary = document.createElement("summary");
+  summary.textContent = "Read the original wording";
+  const quote = document.createElement("blockquote");
+  quote.textContent = `“${finding.originalQuote}”`;
+  details.append(summary, quote);
+
+  const source = document.createElement("button");
+  source.className = "source-button";
+  source.type = "button";
+  source.textContent = "Show on the page ↗";
+  source.addEventListener("click", () => showSource(finding));
+
+  article.append(top, title, plain, why, details, source);
+  return article;
+}
+
+function paragraph(text) {
+  const p = document.createElement("p");
+  p.textContent = text;
+  return p;
+}
+
+async function showSource(finding) {
+  try {
+    const message = state.source?.kind === "tab"
+      ? { type: "HIGHLIGHT_IN_TAB", tabId: state.source.tabId, quote: finding.originalQuote }
+      : { type: "OPEN_AND_HIGHLIGHT", url: state.source?.url, quote: finding.originalQuote };
+    const response = await chrome.runtime.sendMessage(message);
+    if (response?.error) throw new Error(response.error);
+    announce(response?.found === false ? "Opened the page, but could not locate that exact wording." : "Highlighted the wording on the page.");
+  } catch {
+    announce("Click the Terms Lens icon on that page, then try again.");
+  }
+}
+
+function showLoading(title, message) {
+  $("#loadingTitle").textContent = title;
+  $("#loadingMessage").textContent = message;
+  showView("loading");
+}
+
+function showError(message) {
+  $("#errorMessage").textContent = message;
+  showView("error");
+}
+
+function friendly(error) {
+  const message = String(error?.message || "");
+  if (/Failed to fetch|NetworkError/i.test(message)) return "That page could not be downloaded. Open it in a tab and scan it from there.";
+  return message || "Something went wrong. Please try again.";
+}
+
+function extractBlocks(parsedDocument) {
+  const root = parsedDocument.querySelector("main, article, [role='main']") || parsedDocument.body;
   const elements = [...root.querySelectorAll("h1, h2, h3, h4, p, li, td, th")];
   let heading = "";
   const blocks = [];
   for (const element of elements) {
-    const text = cleanText(element.textContent);
+    const text = String(element.textContent ?? "").replace(/\s+/g, " ").trim();
     if (/^H[1-4]$/.test(element.tagName)) {
       heading = text;
       continue;
@@ -177,136 +436,6 @@ function extractBlocks(document) {
   return blocks;
 }
 
-async function analyzeDocument(document) {
-  showView("loading");
-  state.selectedUrl = document.url;
-  $("#loadingMessage").textContent = `Reviewing ${document.blocks.length} readable sections.`;
-  if (!document.blocks.length) throw new Error("No readable policy text was found on that page.");
-
-  try {
-    const response = await fetch(`${state.apiUrl}/api/analyze`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(document)
-    });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || "Analysis failed.");
-    state.result = data;
-    state.filter = "all";
-    renderResults();
-    showView("results");
-  } catch (error) {
-    if (/Failed to fetch/i.test(error.message)) {
-      throw new Error("Start the Terms Lens server with `npm start`, then try again.");
-    }
-    throw error;
-  }
-}
-
-function renderResults() {
-  const result = state.result;
-  $("#modeBadge").textContent = result.analysisMode === "ai" ? "Evidence-checked AI scan" : "Quick phrase scan";
-  $("#resultTitle").textContent = result.documentTitle;
-  $("#resultSummary").textContent = result.summary;
-  const counts = [
-    ["concern", "Concerns"],
-    ["caution", "Worth knowing"],
-    ["positive", "Good clauses"]
-  ];
-  $("#summaryCounts").innerHTML = counts.map(([key, label]) => {
-    const count = result.findings.filter((item) => item.classification === key).length;
-    return `<div class="summary-count"><strong>${count}</strong><span>${label}</span></div>`;
-  }).join("");
-  document.querySelectorAll(".filter").forEach((button) => {
-    const isActive = button.dataset.filter === "all";
-    button.classList.toggle("active", isActive);
-    button.setAttribute("aria-pressed", String(isActive));
-  });
-  renderFindings();
-  $("#limitations").textContent = (result.limitations || []).join(" ");
-}
-
-function renderFindings() {
-  const container = $("#findings");
-  const findings = state.result.findings.filter(
-    (item) => state.filter === "all" || item.classification === state.filter
-  );
-  container.replaceChildren();
-  if (!findings.length) {
-    container.innerHTML = '<div class="empty">No supported findings in this category.</div>';
-    return;
-  }
-  findings.forEach((finding) => container.append(createFindingCard(finding)));
-}
-
-function createFindingCard(finding) {
-  const article = document.createElement("article");
-  article.className = `finding ${finding.classification}`;
-  article.innerHTML = `
-    <div class="finding-top">
-      <span class="finding-label">${escapeHtml(finding.classification)} · ${escapeHtml(finding.category)}</span>
-      <span class="finding-label">${Math.round(finding.confidence * 100)}% evidence match</span>
-    </div>
-    <h3>${escapeHtml(finding.title)}</h3>
-    <p>${escapeHtml(finding.plainEnglish)}</p>
-    <p class="why"><strong>Why it matters:</strong> ${escapeHtml(finding.whyItMatters)}</p>
-    <details><summary>Read the original wording</summary><blockquote>“${escapeHtml(finding.originalQuote)}”</blockquote></details>
-    <button class="source-button">Open and highlight source ↗</button>
-  `;
-  article.querySelector(".source-button").addEventListener("click", async () => {
-    try {
-      const response = await chrome.runtime.sendMessage({
-        type: "OPEN_AND_HIGHLIGHT",
-        url: state.selectedUrl,
-        quote: finding.originalQuote
-      });
-      if (response?.error) throw new Error(response.error);
-      if (response?.found === false) throw new Error("Could not find that exact wording on the page.");
-      announce("Opened the source and highlighted the wording.");
-    } catch (error) {
-      announce(error.message || "Opening the source page instead.");
-      chrome.tabs.create({ url: state.selectedUrl });
-    }
-  });
-  return article;
-}
-
-function showError(message) {
-  $("#errorMessage").textContent = message;
-  showView("error");
-}
-
-function cleanText(value) {
-  return String(value ?? "").replace(/\s+/g, " ").trim();
-}
-
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
-
 function announce(message) {
   $("#announcer").textContent = message;
-}
-
-function syncFieldValidity(event) {
-  const input = event.target;
-  if (!input.matches?.("input")) return;
-  if (input.matches(":user-invalid")) {
-    markFieldError(input);
-  } else {
-    clearFieldError(input);
-  }
-}
-
-function markFieldError(input) {
-  input.setAttribute("aria-invalid", "true");
-}
-
-function clearFieldError(input) {
-  input.removeAttribute("aria-invalid");
 }
