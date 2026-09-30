@@ -9,8 +9,9 @@ import { execFileSync, spawn } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const ROOT = new URL("../..", import.meta.url).pathname.replace(/^\/(\w:)/, "$1");
+const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const SRC = join(ROOT, "extension");
 const OUT = process.env.E2E_OUT || mkdtempSync(join(tmpdir(), "terms-lens-e2e-"));
 const CHROME = process.env.CHROME_PATH || ["C:/Program Files/Google/Chrome/Application/chrome.exe", "C:/Program Files (x86)/Google/Chrome/Application/chrome.exe"].find(existsSync);

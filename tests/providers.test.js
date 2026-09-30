@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import { createChromeAiProvider, parseModelOutput, chunkBlocks } from "../extension/lib/providers/chrome-ai.js";
 import { createProviders, runDeeperScan, runQuickScan, normalizePreference, PREFERENCES } from "../extension/lib/providers/index.js";
 
@@ -108,7 +109,7 @@ test("packaged extension has no localhost dependency and no embedded keys", asyn
   const { readdir } = await import("node:fs/promises");
   const walk = async (dir) => (await Promise.all((await readdir(dir, { withFileTypes: true })).map((entry) =>
     entry.isDirectory() ? walk(`${dir}/${entry.name}`) : [`${dir}/${entry.name}`]))).flat();
-  const files = (await walk(new URL("../extension", import.meta.url).pathname.replace(/^\/(\w:)/, "$1")))
+  const files = (await walk(fileURLToPath(new URL("../extension", import.meta.url))))
     .filter((file) => /\.(js|json|html)$/.test(file));
   assert.ok(files.length > 5);
   for (const file of files) {

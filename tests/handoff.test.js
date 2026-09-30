@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile, readdir } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import { MAX_CLIPBOARD_CHARS, SERVICES, buildHandoff, continueIn } from "../extension/lib/handoff.js";
 import { quickScan } from "../extension/lib/quick-scan.js";
 
@@ -98,7 +99,7 @@ test("the extension never requests, stores or names an API key or account sessio
       else if (/\.(js|html|json)$/.test(entry.name)) files.push(path);
     }
   };
-  await walk(new URL("../extension", import.meta.url).pathname.replace(/^\/(\w:)/, "$1"));
+  await walk(fileURLToPath(new URL("../extension", import.meta.url)));
   for (const file of files) {
     const source = await readFile(file, "utf8");
     assert.doesNotMatch(source, /api[_-]?key|apikey|OPENAI|GEMINI_|Authorization|chrome\.cookies|document\.cookie|type="password"/i, file.replace(/.*extension\//, ""));
