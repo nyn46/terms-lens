@@ -1,6 +1,6 @@
 # Terms Lens
 
-Terms Lens is a Chrome extension that points out the clauses in a website's terms worth a closer look, and shows the original wording beside each one. It is plain-language guidance, **not legal advice**, and it never gives a trust score.
+Terms Lens is a Chrome extension that points out the clauses in a website's agreement worth a closer look, and shows the original wording next to each one. It works on a terms page **and on the terms shown inside a signup or checkout popup**. It is plain-language guidance, **not legal advice**, and it never gives a trust score.
 
 ## 1. Normal-user installation (no setup)
 
@@ -8,75 +8,82 @@ No npm, server, account, API key or environment variable is needed.
 
 1. Open `chrome://extensions` and turn on **Developer mode**.
 2. Choose **Load unpacked** and select the `extension` folder of this project.
-3. Open a site's Terms, Privacy or Refund page and click the **Terms Lens** toolbar icon (pin it from the puzzle-piece menu if you cannot see it).
-4. Press **Scan this page**. Quick Scan results appear immediately.
+3. Open a terms page, or open the terms popup in a signup or checkout flow.
+4. Click the **Terms Lens** toolbar icon (pin it from the puzzle-piece menu if you cannot see it) and press **Scan this agreement**.
 
-After switching to another tab, click the Terms Lens icon on that page again; Chrome only lets an extension read a page after you invoke it there.
+Quick Scan runs entirely inside the extension. It needs no server, login or internet connection.
 
-## 2. What you can do with a result
+### What gets scanned
 
-| Option | What it is | Where the page text goes |
-| --- | --- | --- |
-| **Quick Scan** (default, always on) | Checks the page for known contract patterns. It may miss clauses that depend on context. It is not an AI and not a legal review. | Stays on your device. It runs inside the extension; no server, account or internet connection is needed. |
-| **Private AI Scan** (optional) | Uses Chrome's built-in on-device AI for a more contextual read, shown only when your Chrome supports it. If Chrome's model is not on the device yet, the button says **Download private AI model** and nothing downloads until you click it. | Stays on your device. Every finding must quote wording that really appears on the page, or it is dropped. |
-| **Continue in ChatGPT** / **Continue in Gemini** | When you click, Terms Lens copies a ready-made analysis prompt to your clipboard and opens the site. You paste it yourself. If the document is too long to paste, it saves a file in your Downloads folder and copies short upload instructions instead. | Nothing is sent by Terms Lens. Text only reaches ChatGPT or Gemini if **you** paste or upload it. Terms Lens does not read your cookies or signed-in sessions and never asks for an API key. |
+Terms Lens reads what is visible and never clicks, ticks or submits anything, so it never accepts terms for you. It looks for the agreement in this order: an open `<dialog>`, an ARIA dialog or `aria-modal` element, a fixed-position overlay (including React/Vue portals), an open Shadow DOM dialog, a same-origin iframe, then the page itself. Candidates are scored by legal wording and size, so a cookie banner, newsletter popup, login form or hidden dialog is ignored and never scanned by mistake.
 
-If Private AI Scan is unavailable, slow or fails, the Quick Scan result stays on screen, no technical error is shown, and the ChatGPT and Gemini buttons remain available.
+If the agreement is embedded from **another website** (a cross-origin iframe), Terms Lens says so and offers two choices: allow access to that one site and scan it in place, or **Open agreement and scan** in a normal tab. It never asks for access to every site.
 
-Open **Settings** (gear icon) to choose whether Private AI Scan only appears as an option (Automatic) or also starts by itself when Chrome's model is already installed.
+### Deeper analysis in ChatGPT or Gemini
+
+After a scan, **Analyze with ChatGPT** and **Analyze with Gemini** copy a ready-made analysis prompt to your clipboard, show "Copied. Paste into ChatGPT to continue.", and then open the service. You paste it yourself.
+
+- The prompt holds the agreement title and address, the Quick Scan findings with exact evidence, the agreement text and instructions not to invent clauses, to quote the exact wording for every claim, and to separate definite findings from uncertainty.
+- Prompts up to **40,000 characters** (about 10,000 tokens) are copied directly. Longer agreements are never truncated: a clearly named `.md` file is saved to Downloads, short upload instructions are copied, and the service opens so you can upload the file.
+- If copying fails, nothing opens. A selectable copy of the prompt and a **Copy prompt** button appear instead.
+- Terms Lens does not log you in, read provider cookies, use API keys, paste for you or send anything itself. Your existing ChatGPT or Gemini session is simply whatever your browser already has.
 
 ## Permissions
 
 | Permission | Why |
 | --- | --- |
 | `activeTab` | Read the page you chose to scan, after you click the toolbar icon on it. |
-| `scripting` | Extract the page text and highlight a finding's wording on the page. |
-| `sidePanel` | Show results in Chrome's side panel. |
-| `storage` | Remember one Settings choice. |
-| Optional site access | Asked for at click time, for one site only, if Chrome has not already granted access, or when you scan a different legal page from the list or by web address. |
+| `scripting` | Read the agreement text (including inside dialogs and frames) and highlight a finding on the page. |
+| `storage` | Keep the latest result in memory for the browser session so the popup can reopen on it. |
+| Optional site access | Asked for at click time, for one site only, when Chrome has not already granted access or an agreement is embedded from another site. |
 
 There is no `tabs`, `clipboardWrite`, `downloads`, `cookies` or always-on website access. Copying and saving happen from your click, and opening a tab needs no permission.
 
 ## Privacy
 
-Short version: scans run locally; nothing leaves your device unless you paste it into ChatGPT or Gemini yourself. See [PRIVACY.md](PRIVACY.md) for the full statement.
+Scans run locally and nothing leaves your device unless you paste it into ChatGPT or Gemini yourself. See [PRIVACY.md](PRIVACY.md).
 
-## 3. Developer setup
+## 2. Developer setup
 
 ```bash
 npm run check     # syntax-check every script and verify the manifest
-npm test          # unit tests: rules, evidence, dedupe, counts, providers, hand-off, packaging guards
-npm run test:e2e  # real-Chrome test of the side panel (needs Google Chrome; uses a throwaway profile)
-```
-
-Layout:
-
-```text
-extension/        the packaged extension (this folder is what you load or zip)
-  lib/            analyzer, evidence checks, view model, hand-off, providers
-server/           development-only, see section 4
-tests/            unit tests and tests/e2e (development only)
-scripts/          check script
+npm test          # unit tests: rules, ranking, evidence, dedupe, counts, hand-off, packaging guards
+npm run test:e2e  # real Chrome: popup, modal fixtures, hand-off, motion (needs Google Chrome; throwaway profile)
 ```
 
 ```text
-side panel --SCAN_TAB--> service worker --activeTab--> content script (page text)
-side panel: sanitize -> Quick Scan (local rules) -> view model (evidence + dedupe + counts) -> results
-            -> optional provider: Chrome on-device AI -> validate -> same view model
-            -> hand-off: build prompt -> clipboard (or file) -> open ChatGPT / Gemini on click
+extension/        the packaged extension (load or zip this folder)
+  popup.*         the popup (HTML, CSS, JS)
+  content-script.js   reads the page, dialogs, shadow DOM and frames; locates and highlights wording
+  service-worker.js   opens a linked agreement in a tab and scans it
+  lib/            Quick Scan rules and analyzer, agreement ranking, view model, hand-off, bundled icons
+server/           development-only (section 3)
+tests/            unit tests; tests/e2e and tests/fixtures are development only
+scripts/          check script, icon generator
 ```
 
-The on-device model runs in the side panel (an extension document), never in the service worker. `extension/lib/providers/` holds the provider interface (`id`, `label`, `availability()`, `analyze(document)`).
+```text
+popup -> content script in every readable frame -> candidates (dialogs, overlays, shadow DOM, frames, page)
+      -> rank and choose -> Quick Scan (local) -> view model (evidence, dedupe, counts) -> results
+      -> Analyze with ChatGPT / Gemini: build prompt -> copy -> feedback -> open tab
+```
 
-## 4. Optional development server
+The end-to-end test serves controlled fixture pages from a small test-only server and maps them to `fixtures.test` and `other.test`, so the extension itself is still checked for any localhost request.
+
+## 3. Optional development server
 
 `server/` is an experiment harness that can call a hosted model with your own API key. **Normal users never need it, and the packaged extension does not call it.** `extension/` contains no reference to localhost, and a test enforces that. To try it: copy `server/.env.example` to `server/.env`, add a key, and run `npm start`.
 
 ## Limitations
 
-- Quick Scan only recognises a fixed list of patterns.
-- Text that a site renders very late, pages behind a login, and PDFs are not supported yet. Chrome's own pages and the Chrome Web Store cannot be read by any extension.
-- Private AI Scan needs a supported device and Chrome's downloaded model, and a small model can misread context.
-- Exact-wording highlighting can fail if the live page differs from the text that was scanned.
+- Quick Scan only recognises a fixed list of patterns and may miss clauses that depend on context.
+- Text that loads only after you expand or scroll must be visible when you scan; press scan again after opening a section.
+- PDFs, pages behind a login that Chrome will not let an extension read, Chrome's own pages and the Chrome Web Store are not supported.
+- A closed Shadow DOM cannot be read by any extension.
+- Wording can only be highlighted while it is on the page; if the page changes, scan again.
+
+## Third-party software
+
+Icons are from [Lucide](https://lucide.dev) and bundled locally. See [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
 Terms Lens provides plain-language guidance. It is not legal advice and does not decide whether a company is trustworthy.

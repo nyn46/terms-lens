@@ -25,8 +25,7 @@ for (const file of files) {
 const manifest = JSON.parse(readFileSync(join(root, "extension", "manifest.json"), "utf8"));
 const referenced = [
   manifest.background?.service_worker,
-  manifest.side_panel?.default_path,
-  manifest.options_ui?.page
+  manifest.action?.default_popup
 ].filter(Boolean);
 for (const file of referenced) {
   if (!existsSync(join(root, "extension", file))) {

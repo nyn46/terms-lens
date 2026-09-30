@@ -1,6 +1,6 @@
 {
   "name": "terms-lens",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "Evidence-first Chrome extension that explains website terms in plain English.",

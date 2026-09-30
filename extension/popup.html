@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Terms Lens</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header class="top">
+      <span class="logo" data-icon="shield-check" data-size="18"></span>
+      <div class="brand">
+        <h1>Terms Lens</h1>
+        <p>Know what you&rsquo;re agreeing to.</p>
+      </div>
+      <button id="rescanButton" class="icon-button hidden" type="button" aria-label="Scan again" title="Scan again" data-icon="rotate-cw" data-size="15"></button>
+    </header>
+
+    <main id="content">
+      <div id="announcer" class="sr-only" aria-live="polite" aria-atomic="true"></div>
+
+      <section id="idle" class="view">
+        <div class="page-card">
+          <span class="page-icon" data-icon="app-window" data-size="16"></span>
+          <div class="page-text">
+            <strong id="pageTitle">This page</strong>
+            <span id="pageHost"></span>
+          </div>
+        </div>
+        <button id="scanButton" class="button primary" type="button">
+          <span data-icon="file-search" data-size="16"></span>
+          <span>Scan this agreement</span>
+        </button>
+        <p class="hint">Works on a terms page, or on a signup popup that shows the terms.</p>
+      </section>
+
+      <section id="loading" class="view hidden" aria-live="polite">
+        <div class="scanner" aria-hidden="true"><span></span></div>
+        <p id="loadingText" class="loading-text">Finding the agreement</p>
+        <div class="skeletons" aria-hidden="true"><i></i><i></i><i></i></div>
+      </section>
+
+      <section id="results" class="view hidden">
+        <div class="result-head">
+          <h2 id="resultTitle"></h2>
+          <span id="sourceChip" class="chip"></span>
+        </div>
+        <div id="summary" class="summary"></div>
+        <p class="mode-note"><span>Quick Scan</span> Checks this page for known contract patterns. It may miss clauses that depend on context.</p>
+        <div id="filters" class="filters" role="group" aria-label="Filter findings">
+          <button class="filter active" type="button" data-filter="all" aria-pressed="true">All</button>
+          <button class="filter" type="button" data-filter="concern" aria-pressed="false">Concerns</button>
+          <button class="filter" type="button" data-filter="caution" aria-pressed="false">Worth knowing</button>
+          <button class="filter" type="button" data-filter="positive" aria-pressed="false">Good</button>
+        </div>
+        <div id="findings" class="findings"></div>
+
+        <section class="deeper" aria-labelledby="deeperTitle">
+          <h2 id="deeperTitle"><span data-icon="sparkles" data-size="15"></span>Want a deeper analysis?</h2>
+          <p>We&rsquo;ll copy a ready-made analysis prompt and open the AI you choose.</p>
+          <div class="deeper-actions">
+            <button id="chatgptButton" class="button" type="button">
+              <span data-icon="message-square-text" data-size="15"></span><span>Analyze with ChatGPT</span><span class="trail" data-icon="external-link" data-size="13"></span>
+            </button>
+            <button id="geminiButton" class="button" type="button">
+              <span data-icon="message-square-text" data-size="15"></span><span>Analyze with Gemini</span><span class="trail" data-icon="external-link" data-size="13"></span>
+            </button>
+          </div>
+          <p id="handoffFeedback" class="feedback hidden" role="status"><span data-icon="check" data-size="14"></span><span id="handoffFeedbackText"></span></p>
+          <div id="handoffFallback" class="fallback hidden">
+            <textarea id="fallbackText" readonly rows="5" aria-label="Analysis prompt to copy"></textarea>
+            <button id="copyPromptButton" class="button" type="button"><span data-icon="copy" data-size="15"></span><span>Copy prompt</span></button>
+          </div>
+        </section>
+      </section>
+
+      <section id="notice" class="view hidden" role="status">
+        <div class="notice-icon" id="noticeIcon"></div>
+        <h2 id="noticeTitle"></h2>
+        <p id="noticeText"></p>
+        <div id="noticeActions" class="notice-actions"></div>
+      </section>
+    </main>
+
+    <footer>Plain-language guidance, not legal advice.</footer>
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>

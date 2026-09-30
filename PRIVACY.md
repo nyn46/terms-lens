@@ -1,34 +1,36 @@
 # Terms Lens Privacy Statement
 
-Last updated: 2026-09-30. Applies to extension version 0.2.0.
+Last updated: 2026-10-01. Applies to extension version 0.3.0.
 
-Terms Lens is designed so that the text of the pages you scan stays on your device.
+Terms Lens is designed so that the text you scan stays on your device.
 
-## What happens to page text
+## What happens to the agreement text
 
-- **Quick Scan** runs entirely inside the extension. No page text, address or result is sent anywhere.
-- **Private AI Scan** uses Chrome's built-in on-device AI. The text is processed on your device by Chrome's own model.
-  If the model is not installed, Chrome downloads it only after you click **Download private AI model**. That download is performed by Chrome, not by Terms Lens, and contains no page text.
-- **Continue in ChatGPT / Continue in Gemini** copies a prompt (the page title, address, Quick Scan findings and the page text) to your clipboard **only when you click**, then opens chatgpt.com or gemini.google.com in a new tab. If the text is long, it saves a file to your Downloads folder instead. Terms Lens sends nothing to those services. The text reaches them only if you paste or upload it yourself, and from then on it is governed by that service's own terms and privacy policy. Your clipboard contents can be read by other software on your device until you copy something else.
-- **Scanning another page** (only when you click a listed legal page or enter a web address) downloads that page directly from its site, without your cookies, after Chrome asks for permission for that one site.
+- **Quick Scan** runs entirely inside the extension. The text, page address and results are not sent anywhere.
+- **Analyze with ChatGPT / Analyze with Gemini** copies a prompt (the agreement title and address, the Quick Scan findings and the agreement text) to your clipboard **only when you click**, shows a confirmation, and then opens chatgpt.com or gemini.google.com in a new tab. If the text is very long, it saves a file to your Downloads folder instead and copies short upload instructions. Terms Lens sends nothing to those services. The text reaches them only if you paste or upload it yourself, and from then on it is governed by that service's own terms and privacy policy. Other software on your device can read the clipboard until you copy something else.
+- **Open agreement and scan**, or scanning a linked page, opens that page in a normal tab after Chrome asks for permission for that one site. Terms Lens then reads it on your device.
+
+## What Terms Lens reads
+
+Only what is visible on the page you chose to scan, at the moment you press the button: dialogs, overlays and frames included. It never clicks, ticks a box, accepts terms or submits a form, and never reads passwords, form entries or cookies.
 
 ## What Terms Lens stores
 
-Only one Settings choice (Automatic or Chrome on-device AI), in Chrome's local extension storage. Scan results, page text and addresses are not stored and are discarded when the panel resets or closes.
+The latest scan result for each open tab is kept **in memory only** (Chrome's session storage) so the popup can reopen on it. It is cleared when that tab closes or the browser closes, and it never leaves your device. Nothing is written to persistent storage.
 
 ## What Terms Lens does not do
 
 - It has no account, sign-in, analytics or tracking, and contacts no Terms Lens server.
 - It never asks for, stores or ships an API key.
-- It does not read cookies, signed-in sessions, passwords or account data for Google, OpenAI or any other site, and does not paste into ChatGPT or Gemini for you.
+- It does not read cookies, signed-in sessions or account data for Google, OpenAI or any other site, does not log you in, and does not paste into ChatGPT or Gemini for you.
 - It does not sell or share data.
 
 ## Permissions
 
-`activeTab`, `scripting`, `sidePanel`, `storage`, plus optional access to one site at a time when you choose to scan it. See the README for what each one is used for.
+`activeTab`, `scripting`, `storage`, plus optional access to a single site at a time when you choose to scan it. See the README for what each is used for.
 
 ## Changes
 
-If a future version sends page text to any service, it will be opt-in, clearly labelled, and this statement and the store listing will be updated before release.
+If a future version sends page text to any service, it will be opt-in, clearly labelled, and this statement and the store listing will be updated first.
 
 Terms Lens provides plain-language guidance and is not legal advice.

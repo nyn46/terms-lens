@@ -1,111 +1,42 @@
-// The service worker only reads the page the user chose to scan. All analysis
-// (Quick Scan and Private AI Scan) runs in the side panel, on this device.
-
-// Clicking the toolbar icon grants "activeTab" for that page and opens the panel.
-chrome.action.onClicked.addListener((tab) => {
-  if (tab?.windowId) chrome.sidePanel.open({ windowId: tab.windowId }).catch(() => {});
-  rememberTab(tab?.id).catch(() => {});
-});
-
-chrome.tabs.onActivated.addListener(({ tabId }) => {
-  rememberTab(tabId).catch(() => {});
-});
+// The popup does all the scanning. The service worker only exists for one job the popup cannot finish
+// itself: opening an agreement in a new tab (which closes the popup) and scanning it once it has loaded.
+import { forgetScan, saveScan, scanTab } from "./lib/scan-tab.js";
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  handleMessage(message).then(sendResponse);
+  if (message?.type !== "OPEN_AND_SCAN") return false;
+  openAndScan(message.url, message.canRead).then(sendResponse, () => sendResponse({ ok: false }));
   return true;
 });
 
-async function handleMessage(message) {
-  try {
-    if (message?.type === "SCAN_TAB") return await readPage(message.tabId);
-    if (message?.type === "HIGHLIGHT_IN_TAB") return await highlightInTab(message.tabId, message.quote);
-    if (message?.type === "OPEN_AND_HIGHLIGHT") return await openAndHighlight(message.url, message.quote);
-    return { error: "Unknown request." };
-  } catch (error) {
-    return { error: error.message || "Request failed." };
-  }
-}
+chrome.tabs.onRemoved.addListener((tabId) => {
+  forgetScan(tabId).catch(() => {});
+});
 
-async function rememberTab(tabId) {
-  if (tabId == null) return;
-  await chrome.storage.session.set({ termsLensTabId: tabId });
-}
-
-async function resolveTabId(requested) {
-  if (requested != null) return requested;
-  const { termsLensTabId } = await chrome.storage.session.get("termsLensTabId");
-  if (termsLensTabId != null) return termsLensTabId;
-  const [active] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-  return active?.id ?? null;
-}
-
-async function readPage(requestedTabId) {
-  const tabId = await resolveTabId(requestedTabId);
-  if (tabId == null) return { needsActivation: true };
-  try {
-    const existing = await runInPage(tabId);
-    const page = existing ?? (await injectAndRun(tabId));
-    if (page?.contentType === "application/pdf") return { unsupported: "pdf" };
-    if (!page?.currentDocument) return { error: "No readable page content was found." };
-    return { tabId, page };
-  } catch {
-    // Chrome refused the script: this page is off limits, or access has not been granted yet.
-    return classifyBlockedTab(tabId);
-  }
-}
-
-async function classifyBlockedTab(tabId) {
-  let url = "";
-  try {
-    url = (await chrome.tabs.get(tabId)).url || "";
-  } catch {
-    // The URL is only visible once the user has invoked the extension on this tab.
-  }
-  if (/^(chrome|chrome-extension|edge|about|devtools|view-source|file):/i.test(url)) return { unsupported: "browser-page" };
-  if (/^https:\/\/(chromewebstore\.google\.com|chrome\.google\.com\/webstore)/i.test(url)) return { unsupported: "web-store" };
-  if (/\.pdf($|[?#])/i.test(url)) return { unsupported: "pdf" };
-  if (/^https?:/i.test(url)) return { needsPermission: true, origin: new URL(url).origin, tabId };
-  return { needsActivation: true };
-}
-async function injectAndRun(tabId) {
-  await chrome.scripting.executeScript({ target: { tabId }, files: ["content-script.js"] });
-  return runInPage(tabId);
-}
-
-async function runInPage(tabId) {
-  const [{ result }] = await chrome.scripting.executeScript({
-    target: { tabId },
-    func: () => window.TermsLens?.discoverPage?.() ?? null
-  });
-  return result;
-}
-
-async function highlightInTab(tabId, quote) {
-  await chrome.tabs.update(tabId, { active: true });
-  await chrome.scripting.executeScript({ target: { tabId }, files: ["content-script.js"] });
-  const [{ result }] = await chrome.scripting.executeScript({
-    target: { tabId },
-    func: (value) => window.TermsLens.highlightQuote(value),
-    args: [quote]
-  });
-  return result;
-}
-
-async function openAndHighlight(url, quote) {
-  const origin = new URL(url).origin;
-  const hasPermission = await chrome.permissions.contains({ origins: [`${origin}/*`] });
+async function openAndScan(url, canRead) {
+  if (!/^https?:\/\//i.test(String(url))) return { ok: false };
   const tab = await chrome.tabs.create({ url, active: true });
-  if (!hasPermission) return { found: false, opened: true };
-  await waitForTab(tab.id);
-  return highlightInTab(tab.id, quote);
+  if (!canRead) return { ok: true, scanned: false };
+  try {
+    await waitForLoad(tab.id);
+    const scan = await scanTab(tab.id);
+    if (scan.status === "scan") {
+      const { url: finalUrl } = await chrome.tabs.get(tab.id);
+      await saveScan(tab.id, finalUrl || url, scan);
+      await chrome.action.setBadgeBackgroundColor({ tabId: tab.id, color: "#6b6fe6" });
+      await chrome.action.setBadgeText({ tabId: tab.id, text: "✓" });
+      return { ok: true, scanned: true };
+    }
+  } catch {
+    // The user can still click Terms Lens on that tab; nothing else to do here.
+  }
+  return { ok: true, scanned: false };
 }
 
-function waitForTab(tabId) {
+function waitForLoad(tabId) {
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
       chrome.tabs.onUpdated.removeListener(listener);
-      reject(new Error("The policy page took too long to load."));
+      reject(new Error("timeout"));
     }, 20_000);
     function listener(updatedId, info) {
       if (updatedId !== tabId || info.status !== "complete") return;
